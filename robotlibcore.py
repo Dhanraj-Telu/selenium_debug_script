@@ -24,6 +24,8 @@ import sys
 from robot.api import logger
 from robot.libraries.BuiltIn import BuiltIn
 from functools import wraps
+import time
+from selenium.common.exceptions import StaleElementReferenceException
 
 def keyword(name=None, tags=()):
         if callable(name):
@@ -35,12 +37,22 @@ def keyword(name=None, tags=()):
             @wraps(func)
             def wrapper(*args, **kwargs):
                 _argspec = dict(itertools.izip(_func_args, args))
+                max_time = time.time() + 600
                 if 'locator' in _argspec.keys():
-                    logger.info('Locator: %s'%_argspec['locator'])
-                    _argspec['self'].highlight_element(_argspec['locator'])
-                    func(*args, **kwargs)
-                    BuiltIn().run_keyword('Capture Page Screenshot')
-                    _argspec['self'].apply_original_style(_argspec['locator'])
+                    #logger.info('Locator: %s'%_argspec['locator'])
+                    for i in range(5):
+                        try:
+                            if _argspec['self'].driver.execute_script('return document.readyState') == 'complete':
+                                if func.__name__.lower().startswith('click') or func.__name__.lower().startswith('input'):
+                                    _argspec['self'].highlight_element(_argspec['locator'])
+                                    BuiltIn().run_keyword('Capture Page Screenshot')
+                                    _argspec['self'].apply_original_style(_argspec['locator'])
+                                return func(*args, **kwargs)
+                        except Exception as err:
+                            logger.console('Got Exception: %s --> %s'%(_argspec['locator'], err))
+                            if i >= 4:
+                                raise AssertionError(err)
+                            time.sleep(5)
                 else:
                     return func(*args, **kwargs)
             return wrapper
